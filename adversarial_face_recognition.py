@@ -7,10 +7,14 @@ import dlib
 import numpy as np
 import random as r
 import glob
+import os
 from tqdm import tqdm
 from torch import autograd
 from PIL import Image, ImageDraw, ImageChops
 from facenet_pytorch import InceptionResnetV1
+
+t.set_default_tensor_type(t.cuda.FloatTensor)
+
 
 ## Initalizes a constant random seed to keep results consistent if random
 ## mask is being used 
@@ -61,7 +65,7 @@ class Applier(nn.Module):
     def __init__(self):
         super(Applier, self).__init__()
 
-    def forward(self, image, mask):
+    def forward(self, cond, image, mask):
         """
         Applies a mask on an image
 
@@ -79,7 +83,7 @@ class Applier(nn.Module):
         Tensor
             combined image and mask tensor
         """
-        adversarial_tensor = t.where((mask == 0), image, mask)
+        adversarial_tensor = t.where((cond == 0), image.cuda(), mask.cuda())
         return adversarial_tensor
 
 
@@ -130,7 +134,7 @@ class Attack(object):
         # will be used for actual training
         for image, _ in self.input_list:
             self.input_emb.append(self.resnet(self.norm(tensorize(image).cuda())))
-            self.input_tensors.append(tensorize(image))
+            self.input_tensors.append(tensorize(image).cuda())
 
         # Create target embeddings for loss calculation
         for image, _ in self.target_list:
@@ -184,7 +188,7 @@ class Attack(object):
                 self.opt.zero_grad()
 
                 # ... which updates the mask ... and the process begins again
-                self.mask_list[i].data.clamp_(-1, 1)
+                self.mask_list[i].data.clamp_(0, 1)
         print(self.losses)
 
     def results(self, input_test_list, target_test_list, save_path='/'):
@@ -208,28 +212,28 @@ class Attack(object):
         # Just a LOT of euclidean distance calculations... With almost no code reuse :(
         print('\ninputs vs ground truths')
         for i in range(len(self.input_list)):
-            input_test_emb = self.resnet(self.norm(tensorize(input_test_list[i])))
+            input_test_emb = self.resnet(self.norm(tensorize(input_test_list[i]).cuda()))
             print(emb_distance(self.input_emb[i], input_test_emb).item())
 
         print('\ninputs vs target')
         for i in range(len(self.input_list)):
-            print(emb_distance(self.input_emb[i], self.target_emb[i]).item())
+            print(emb_distance(self.input_emb[i][0], self.target_emb[i]).item())
 
         print('\ninputs vs target 2')
         for i in range(len(self.input_list)):
-            target_test_emb = self.resnet(self.norm(tensorize(target_test_list[i])))
+            target_test_emb = self.resnet(self.norm(tensorize(target_test_list[i]).cuda()))
             print(emb_distance(self.input_emb[i], target_test_emb).item())
 
         print('\ntarget vs target 2')
         for i in range(len(self.input_list)):
-            target_test_emb = self.resnet(self.norm(tensorize(target_test_list[i])))
+            target_test_emb = self.resnet(self.norm(tensorize(target_test_list[i]).cuda()))
             print(emb_distance(self.target_emb[i], target_test_emb).item())
 
         print('\nadversarial vs ground truths')
         for i in range(len(self.input_list)):
             adversarial_emb = self.resnet(self.norm(self.apply(self.input_tensors[i],
                                                 self.mask_list[i])))
-            input_test_emb = self.resnet(self.norm(tensorize(input_test_list[i])))                                    
+            input_test_emb = self.resnet(self.norm(tensorize(input_test_list[i]).cuda()))
             print(emb_distance(adversarial_emb, input_test_emb).item())
         
         print('\nadversarial vs target')
@@ -238,17 +242,33 @@ class Attack(object):
                                                 self.mask_list[i])))
             print(emb_distance(adversarial_emb, self.target_emb[i]).item())
 
+        print('\nadversarial vs target without grad')
+        for i in range(len(self.input_list)):
+            adversarial_emb = self.resnet(self.norm(self.apply(self.input_tensors[i],
+                                                self.mask_list[i].detach())))
+            print(emb_distance(adversarial_emb, self.target_emb[i]).item())
+
         print('\nadversarial vs target 2')
         for i in range(len(self.input_list)):
             adversarial_emb = self.resnet(self.norm(self.apply(self.input_tensors[i],
                                                 self.mask_list[i])))
-            target_test_emb = self.resnet(self.norm(tensorize(target_test_list[i])))
+            target_test_emb = self.resnet(self.norm(tensorize(target_test_list[i]).cuda()))
             print(emb_distance(adversarial_emb, target_test_emb).item())
 
         print('\nSAVING IMAGES')
+
+        paths = ['delta', 'combined', 'input', 'target']
+        file_path = './results' + save_path
+
+        if not(os.path.isdir(file_path)):
+            os.mkdir(file_path)
+            for path in paths:
+                os.mkdir(file_path + path)
+            print("New folder " + file_path + " created")
+
         for i in tqdm(range(len(self.input_list))):
-            imagize(self.mask_list[i].detach()).save(f'./results{save_path}delta/{i}.png')
-            imagize((self.input_tensors[i] + self.mask_list[i]).detach()).save(
+            imagize(self.mask_list[i].detach().cpu()).save(f'./results{save_path}delta/{i}.png')
+            imagize((self.input_tensors[i] + self.mask_list[i]).detach().cpu()).save(
                 f'./results{save_path}combined/{i}.png'
             )
             self.input_list[i][0].save(f'./results{save_path}input/{i}.png')
@@ -337,7 +357,7 @@ def detect_face(image_file_name):
     for detection in dets:
         faces.append(shape_predictor(image, detection))
 
-    face_image = Image.fromarray(dlib.get_face_chip(image, faces[0], size=300))
+    face_image = Image.fromarray(dlib.get_face_chip(image, faces[0], size=600))
     landmarks = fr.face_landmarks(np.array(face_image))
     
 

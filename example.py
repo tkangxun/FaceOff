@@ -4,6 +4,7 @@ from adversarial_face_recognition import *
 input_list = load_data('./faces/input/*.*')
 target_list = load_data('./faces/target/*.*')
 
+
 # A list for calculated face masks
 mask_list = []
 
@@ -23,6 +24,9 @@ attacker.train(epochs=45)
 # For result testing load the image testing set
 input_test_list = load_data('./faces/input_tests/*.*')
 target_test_list = load_data('./faces/target_tests/*.*')
+
+input_test_list = [item[0] for item in input_test_list]
+target_test_list = [item[0] for item in target_test_list]
 
 # Print your results.  Make sure you've created the save directory beforehand
 attacker.results(input_test_list, target_test_list, '/results/')

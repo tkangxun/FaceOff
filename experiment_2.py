@@ -111,4 +111,4 @@ for image_path in target_test_path:
     target_test_list.append(att.detect_face(image_path)[0])
 
 # Print results!
-attack.results(input_test_list, target_test_list, '/experiment_2/')
+attack.results(input_test_list, target_test_list, '/test_2/')

@@ -1,10 +1,10 @@
 torch
+cmake
 torchvision
 facenet-pytorch
 face_recognition
-cmake
 dlib
 tqdm
 numpy
 Pillow
-pickle
+opencv-python
